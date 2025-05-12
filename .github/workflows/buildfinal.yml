@@ -1,0 +1,76 @@
+name: Build APK
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+            git unzip openjdk-17-jdk \
+            zlib1g-dev libncurses5-dev \
+            libsqlite3-dev libffi-dev
+
+    - name: Setup Android SDK
+      run: |
+        # Configurar rutas críticas
+        export ANDROID_HOME="$HOME/android-sdk"
+        export ANDROID_SDK_ROOT="$ANDROID_HOME"
+        
+        # Crear estructura de directorios
+        mkdir -p "$ANDROID_HOME/cmdline-tools"
+        
+        # Descargar y extraer tools
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        unzip commandlinetools-linux-*.zip -d cmdline-tools-temp
+        mv cmdline-tools-temp/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+        rm -rf commandlinetools-linux-*.zip cmdline-tools-temp
+        
+        # Configurar entorno
+        echo "$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+        
+        # Aceptar licencias
+        yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+        
+        # Instalar componentes
+        "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "build-tools;34.0.0" \
+            "platforms;android-34" \
+            "ndk;26.1.10909125"
+
+    - name: Install Buildozer
+      run: pip install buildozer
+
+    - name: Build APK
+      run: |
+        # Configurar variables esenciales
+        export BUILDODER_ANDROID_SDK_PATH="$HOME/android-sdk"
+        export BUILDODER_ANDROID_NDK_PATH="$BUILDODER_ANDROID_SDK_PATH/ndk/26.1.10909125"
+        
+        # Ejecutar build
+        buildozer -v android clean
+        buildozer -v android debug
+        
+        # Verificar APK
+        ls -lh ./bin/*.apk
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: App-APK
+        path: ./bin/*.apk
+        if-no-files-found: error
